@@ -29,6 +29,15 @@ async function checkEqualityAfterSerialize<T>(value: T) {
     }); 
 }
 
+test(`Decorator/Symbol property key`, async () => {
+    expect(() => {
+        const symbol = Symbol();
+        class C {
+            @primitive [symbol] = 0;
+        }
+    }).toThrow();
+});
+
 test('Decorator/reconstruct', async () => {
     /**
      * Illustrate the `reconstruct` decorator.
@@ -113,3 +122,109 @@ test('Decorator/tuple', () => {
         public letters: [A, B, C];
     }
 });
+
+test('Callback', async () => {
+    const uuidSymbol = Symbol();
+
+    const assetLibrary = (() => {
+        class UuidRef {
+            @primitive
+            uuid: string;
+    
+            static fromAsset(asset: Asset) {
+                const ref = new UuidRef();
+                ref.uuid = asset[uuidSymbol];
+                return ref;
+            }
+    
+            constructor() {
+            }
+        }
+
+        class AssetLibrary {
+            private _assets = new Map<string, Asset>();
+            private _offlineAssets = new Map<string, Uint8Array>();
+
+            public clearRuntime() {
+                this._assets.clear();
+            }
+
+            public async load<T extends Asset>(uuid: string): Promise<T> {
+                if (!this._assets.has(uuid)) {
+                    const serialized = this._offlineAssets.get(uuid);
+                    const postAssignments: Array<Promise<void>> = [];
+                    const deserialized: T = await deserialize(serialized, {
+                        schemaFinder,
+                        afterPropertyDeserialized: (value: any, schemaOrIndex, target) => {
+                            if (value instanceof UuidRef) {
+                                postAssignments.push(this.load(value.uuid).then((asset) => {
+                                    if (typeof schemaOrIndex === 'number') {
+                                        target[schemaOrIndex] = asset;
+                                    } else {
+                                        deserialize.assignProperty(target, asset, schemaOrIndex);
+                                    }
+                                }));
+                            } else {
+                                return value;
+                            }
+                        },
+                    });
+                    await Promise.all(postAssignments);
+                    this.add(deserialized);
+                }
+                return this._assets.get(uuid) as T;
+            }
+
+            public add(asset: Asset) {
+                this._assets.set(asset[uuidSymbol], asset);
+            }
+
+            public allocateUuid () {
+                return `${(Math.random() * 10000)}`;
+            }
+
+            public async serializeAll() {
+                for (const [uuid, asset] of this._assets) {
+                    const serialized = await serialize(texture, {
+                        schemaFinder,
+                        before: (value: any) => {
+                            if (!(value instanceof Asset) || value === texture) {
+                                return value;
+                            } else {
+                                return UuidRef.fromAsset(value);
+                            }
+                        },
+                    });
+                    this._offlineAssets.set(uuid, serialized);
+                }
+            }
+        }
+        return new AssetLibrary();
+    })();
+
+    class Asset {
+        public [uuidSymbol] = assetLibrary.allocateUuid();
+    }
+
+    class ImageAsset extends Asset {
+        source = 'blah blah';
+    }
+
+    class TextureAsset extends Asset {
+        @primitive
+        public image: ImageAsset | null = null;
+    }
+
+    const texture = new TextureAsset();
+    const image = new ImageAsset();
+    texture.image = image;
+
+    assetLibrary.add(texture);
+    assetLibrary.add(image);
+
+    await assetLibrary.serializeAll();
+    assetLibrary.clearRuntime();
+
+    const loadedTexture = await assetLibrary.load<TextureAsset>(texture[uuidSymbol]);
+    expect(loadedTexture.image.source).toBe(image.source);
+})

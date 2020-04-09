@@ -9,6 +9,10 @@ export const reconstruct = <TFunction extends new (...args: any) => any>(getArgu
     });
 };
 
+export const serializable = withPropertySchema((propertySchema) => {
+    
+});
+
 /**
  * Mark the schema as value type.
  */

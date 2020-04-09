@@ -40,7 +40,7 @@
                 "program": "${workspaceFolder}/node_modules/jest/bin/jest.js"
             },
             "args": [
-                "-t'Decorator/valueType'"
+                "-t'Callback'"
             ],
             "cwd": "${workspaceFolder}",
         },

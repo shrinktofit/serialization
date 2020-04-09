@@ -26,6 +26,14 @@ async function serialize (value: any, options: serialize.Options): Promise<Uint8
     return encoded;
 
     function serializeValue(value: any): SerializedValue {
+        let v = value;
+        if (options.before) {
+            v = options.before(v);
+        }
+        return serializeValueStandard(v);
+    }
+
+    function serializeValueStandard(value: any): SerializedValue {
         if (isPrimitive(value)) {
             return value;
         } else if (Array.isArray(value)) {
@@ -124,6 +132,7 @@ async function serialize (value: any, options: serialize.Options): Promise<Uint8
 namespace serialize {
     export interface Options {
         schemaFinder: SchemaFinder<any>;
+        before?: (value: any) => any;
     }
 }
 
